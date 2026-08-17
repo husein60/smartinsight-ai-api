@@ -1,0 +1,20 @@
+name: Legacy Development Guard
+
+on:
+  pull_request:
+    paths:
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  block-legacy-development:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block development in legacy scholarly adapter
+        run: |
+          echo 'Development is frozen in husein60/smartinsight-ai-api.'
+          echo 'Use husein60/sspa-core for scholarly platform development.'
+          exit 1
