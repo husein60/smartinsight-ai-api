@@ -1,1 +1,0 @@
-Node 24 + npm ci + node --check verified by GitHub Actions
