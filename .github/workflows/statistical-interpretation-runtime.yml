@@ -1,0 +1,75 @@
+name: Statistical Interpretation Runtime Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      AI_BASE_URL: https://smartinsight-ai-api.onrender.com
+    steps:
+      - name: Wait for interpretation capability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$AI_BASE_URL/health" > /tmp/health.json; then
+              if python - <<'PY'
+          import json
+          with open('/tmp/health.json', encoding='utf-8') as f:
+              payload = json.load(f)
+          caps = payload.get('capabilities') or []
+          raise SystemExit(0 if payload.get('status') == 'ok' and 'statistical-interpretation' in caps else 1)
+          PY
+              then
+                exit 0
+              fi
+            fi
+            sleep 6
+          done
+          echo "Statistical interpretation capability did not become available" >&2
+          exit 1
+
+      - name: Interpret structured result
+        run: |
+          set -euo pipefail
+          cat > /tmp/request.json <<'JSON'
+          {
+            "analysis": {
+              "analysis": "correlation",
+              "method": "pearson",
+              "variables": {"x": "exposure", "y": "outcome"},
+              "n": 40,
+              "coefficient": 0.62,
+              "pValue": 0.001,
+              "effectSize": {"name": "correlation", "value": 0.62},
+              "assumptionsAndChecks": ["Inspect linearity and influential outliers before interpretation."],
+              "deterministic": true,
+              "aiGeneratedStatistics": false
+            }
+          }
+          JSON
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/request.json \
+            "$AI_BASE_URL/interpret-statistics" > /tmp/response.json
+          python - <<'PY'
+          import json, re
+          with open('/tmp/response.json', encoding='utf-8') as f:
+              payload = json.load(f)
+          assert payload['mode'] == 'qualitative-only', payload
+          assert payload['numericAuthority'] == 'smartinsight-research-analytics-deterministic-engine', payload
+          assert payload['aiGeneratedStatistics'] is False, payload
+          interpretation = payload['interpretation']
+          required = {'summary','inference','effect','assumptions','limitations','nextSteps'}
+          assert required.issubset(interpretation), interpretation
+          assert not re.search(r'\d', json.dumps(interpretation, ensure_ascii=False)), interpretation
+          assert isinstance(interpretation['nextSteps'], list), interpretation
+          PY
