@@ -285,7 +285,12 @@ app.post("/ai-review", async (req, res) => {
       throw new HttpError(503, "AI review PDF allowlist is not configured");
     }
 
-    const validatedUrl = validatePdfUrl(pdfUrl, AI_REVIEW_PDF_ALLOWED_HOSTS);
+    let validatedUrl;
+    try {
+      validatedUrl = validatePdfUrl(pdfUrl, AI_REVIEW_PDF_ALLOWED_HOSTS);
+    } catch {
+      throw new HttpError(400, "Invalid or disallowed PDF URL");
+    }
     audit("ai_review_started", { submission: auditId, pdfHost: validatedUrl.hostname });
 
     const buffer = await downloadPdf(validatedUrl);
