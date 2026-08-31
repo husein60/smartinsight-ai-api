@@ -17,10 +17,11 @@ jobs:
       AI_BASE_URL: https://smartinsight-ai-api.onrender.com
       AI_API_BEARER_TOKEN: ${{ secrets.AI_API_BEARER_TOKEN }}
     steps:
-      - name: Wait for interpretation capability
+      - name: Wait for protected interpretation runtime
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
+            health_ok=0
             if curl --fail --silent --show-error "$AI_BASE_URL/health" > /tmp/health.json; then
               if python - <<'PY'
           import json
@@ -30,12 +31,21 @@ jobs:
           raise SystemExit(0 if payload.get('status') == 'ok' and 'statistical-interpretation' in caps else 1)
           PY
               then
-                exit 0
+                health_ok=1
               fi
+            fi
+
+            status=$(curl --silent --show-error -o /tmp/unauth.json -w '%{http_code}' \
+              -H "Content-Type: application/json" \
+              --data '{"analysis":{"method":"correlation"}}' \
+              "$AI_BASE_URL/interpret-statistics" || true)
+
+            if [ "$health_ok" = "1" ] && [ "$status" = "401" ]; then
+              exit 0
             fi
             sleep 6
           done
-          echo "Statistical interpretation capability did not become available" >&2
+          echo "Protected statistical interpretation runtime did not become available" >&2
           exit 1
 
       - name: Verify unauthenticated interpretation is rejected
