@@ -50,6 +50,17 @@ test("PDF URL validator rejects unsafe schemes, credentials and unallowlisted ho
   assert.equal(validatePdfUrl("https://storage.example.com/a.pdf", ["storage.example.com"]).hostname, "storage.example.com");
 });
 
+test("statistical interpretation rejects unauthenticated requests", async () => {
+  await withServer(async (base) => {
+    const response = await fetch(`${base}/interpret-statistics`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ analysis: { method: "correlation" } }),
+    });
+    assert.equal(response.status, 401);
+  });
+});
+
 test("AI review rejects unauthenticated requests", async () => {
   await withServer(async (base) => {
     const response = await fetch(`${base}/ai-review`, {
