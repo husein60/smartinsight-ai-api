@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AI_BASE_URL: https://smartinsight-ai-api.onrender.com
+      AI_API_BEARER_TOKEN: ${{ secrets.AI_API_BEARER_TOKEN }}
     steps:
       - name: Wait for interpretation capability
         run: |
@@ -37,7 +38,17 @@ jobs:
           echo "Statistical interpretation capability did not become available" >&2
           exit 1
 
-      - name: Interpret structured result
+      - name: Verify unauthenticated interpretation is rejected
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error -o /tmp/unauth.json -w '%{http_code}' \
+            -H "Content-Type: application/json" \
+            --data '{"analysis":{"method":"correlation"}}' \
+            "$AI_BASE_URL/interpret-statistics")
+          test "$status" = "401"
+
+      - name: Interpret structured result with bearer token
+        if: ${{ env.AI_API_BEARER_TOKEN != '' }}
         run: |
           set -euo pipefail
           cat > /tmp/request.json <<'JSON'
@@ -58,6 +69,7 @@ jobs:
           JSON
           curl --fail --silent --show-error \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $AI_API_BEARER_TOKEN" \
             --data-binary @/tmp/request.json \
             "$AI_BASE_URL/interpret-statistics" > /tmp/response.json
           python - <<'PY'
