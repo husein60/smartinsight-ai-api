@@ -1,0 +1,65 @@
+name: AI API Production Acceptance
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-acceptance:
+    runs-on: ubuntu-latest
+    env:
+      AI_BASE_URL: https://smartinsight-ai-api.onrender.com
+    steps:
+      - name: Wait for production runtime
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$AI_BASE_URL/health" > /tmp/health.json; then
+              if python - <<'PY'
+          import json
+          with open('/tmp/health.json', encoding='utf-8') as f:
+              p=json.load(f)
+          expected={'manuscript-review','statistical-interpretation'}
+          caps=set(p.get('capabilities') or [])
+          ok=(p.get('status')=='ok' and p.get('service')=='smartinsight-ai-api' and expected.issubset(caps) and p.get('aiReviewSecurityConfigured') is True)
+          raise SystemExit(0 if ok else 1)
+          PY
+              then
+                exit 0
+              fi
+            fi
+            sleep 6
+          done
+          echo 'AI API production health/security configuration did not become ready.' >&2
+          cat /tmp/health.json >&2 || true
+          exit 1
+
+      - name: Verify protected endpoints fail closed
+        run: |
+          set -euo pipefail
+          review_status=$(curl --silent --show-error -o /tmp/review.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"submission_id":"acceptance-probe","pdf_url":"https://example.invalid/test.pdf"}' \
+            "$AI_BASE_URL/ai-review" || true)
+          interpretation_status=$(curl --silent --show-error -o /tmp/interpret.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"analysis":{"method":"correlation"}}' \
+            "$AI_BASE_URL/interpret-statistics" || true)
+          test "$review_status" = '401'
+          test "$interpretation_status" = '401'
+
+      - name: Verify public service identity
+        run: |
+          set -euo pipefail
+          body=$(curl --fail --silent --show-error "$AI_BASE_URL/")
+          printf '%s' "$body" | grep -F 'SmartInsight AI API is running'
+
+      - name: Production acceptance summary
+        run: |
+          echo 'AI API production health, security configuration, fail-closed auth, and service identity passed.'
