@@ -231,6 +231,8 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/interpret-statistics", async (req, res) => {
+  if (!requireAiReviewAccess(req, res)) return;
+
   try {
     const analysis = req.body?.analysis;
     if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) {
