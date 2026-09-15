@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
+process.env.NODE_ENV = "test";
+const {
   parseResearchCopilotResponse,
   validateResearchCopilotContext,
-} from "../index.js";
+} = await import("../index.js");
 
 const SOURCE_SHA = "a".repeat(64);
 
