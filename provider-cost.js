@@ -22,6 +22,13 @@ function requireTokenCount(name, value) {
   return value;
 }
 
+function requireCostMicros(name, value) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative safe integer USD-micro cost`);
+  }
+  return value;
+}
+
 function ceilDiv(numerator, denominator) {
   return (numerator + denominator - 1n) / denominator;
 }
@@ -108,6 +115,54 @@ export function priceOpenAIUsage(model, usage) {
 
 export function costOpenAIResponse(model, payload) {
   return priceOpenAIUsage(model, extractOpenAIUsage(payload));
+}
+
+export function summarizeProviderCostEvidence(successCost, retryCosts = []) {
+  if (!successCost || typeof successCost !== "object" || Array.isArray(successCost)) {
+    throw new Error("Successful provider cost evidence is required");
+  }
+  if (!Array.isArray(retryCosts)) {
+    throw new Error("Retry provider costs must be an array");
+  }
+  const successMicros = requireCostMicros("successful provider cost", successCost.estimatedCostUsdMicros);
+  let retryCostUsdMicros = 0;
+  for (const retry of retryCosts) {
+    if (!retry || typeof retry !== "object" || Array.isArray(retry)) {
+      throw new Error("Retry provider cost evidence is invalid");
+    }
+    if (
+      retry.provider !== successCost.provider ||
+      retry.model !== successCost.model ||
+      retry.pricingSourceVersion !== successCost.pricingSourceVersion ||
+      retry.currency !== successCost.currency ||
+      retry.roundingMode !== successCost.roundingMode
+    ) {
+      throw new Error("Retry provider cost evidence crossed a pricing-source boundary");
+    }
+    retryCostUsdMicros += requireCostMicros("retry provider cost", retry.estimatedCostUsdMicros);
+    if (!Number.isSafeInteger(retryCostUsdMicros)) {
+      throw new Error("Retry provider cost exceeds the supported integer range");
+    }
+  }
+  const totalProviderCostUsdMicros = successMicros + retryCostUsdMicros;
+  if (!Number.isSafeInteger(totalProviderCostUsdMicros)) {
+    throw new Error("Total provider cost exceeds the supported integer range");
+  }
+
+  return Object.freeze({
+    provider: successCost.provider,
+    model: successCost.model,
+    pricingSourceVersion: successCost.pricingSourceVersion,
+    pricingBasis: successCost.pricingBasis,
+    successfulUsage: successCost.usage,
+    aiProviderCostUsdMicros: successMicros,
+    retryCostUsdMicros,
+    totalProviderCostUsdMicros,
+    retryAttempts: retryCosts.length,
+    currency: successCost.currency,
+    roundingMode: successCost.roundingMode,
+    numericPurpose: "commercial-cost-evidence-only",
+  });
 }
 
 export const PROVIDER_COST_CONSTANTS = Object.freeze({
