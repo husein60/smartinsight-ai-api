@@ -5,6 +5,7 @@ import {
   costOpenAIResponse,
   extractOpenAIUsage,
   priceOpenAIUsage,
+  summarizeProviderCostEvidence,
 } from "../provider-cost.js";
 
 function responseUsage(overrides = {}) {
@@ -64,6 +65,35 @@ test("sub-micro exact costs round conservatively upward once per provider call",
   });
   assert.equal(priced.estimatedCostUsdMicros, 1);
   assert.equal(priced.roundingMode, "ceiling-to-usd-micro");
+});
+
+test("summarizes successful provider cost separately from qualitative-validation retry cost", () => {
+  const success = priceOpenAIUsage("gpt-4o-mini", {
+    inputTokens: 100,
+    cachedInputTokens: 0,
+    uncachedInputTokens: 100,
+    outputTokens: 50,
+    totalTokens: 150,
+  });
+  const retry = priceOpenAIUsage("gpt-4o-mini", {
+    inputTokens: 50,
+    cachedInputTokens: 0,
+    uncachedInputTokens: 50,
+    outputTokens: 20,
+    totalTokens: 70,
+  });
+  const summary = summarizeProviderCostEvidence(success, [retry]);
+  assert.equal(summary.aiProviderCostUsdMicros, success.estimatedCostUsdMicros);
+  assert.equal(summary.retryCostUsdMicros, retry.estimatedCostUsdMicros);
+  assert.equal(summary.totalProviderCostUsdMicros, success.estimatedCostUsdMicros + retry.estimatedCostUsdMicros);
+  assert.equal(summary.retryAttempts, 1);
+  assert.equal(summary.numericPurpose, "commercial-cost-evidence-only");
+});
+
+test("rejects retry cost evidence from a different pricing source", () => {
+  const success = costOpenAIResponse("gpt-4o-mini", responseUsage());
+  const altered = { ...success, pricingSourceVersion: "wrong-price-book" };
+  assert.throws(() => summarizeProviderCostEvidence(success, [altered]), /pricing-source boundary/);
 });
 
 test("fails closed for unsupported model instead of silently applying wrong pricing", () => {
