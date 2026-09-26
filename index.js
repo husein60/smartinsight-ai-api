@@ -303,6 +303,8 @@ function parseResearchCopilotResponse(text, sourceResultSha256) {
   };
 }
 
+app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
+
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
